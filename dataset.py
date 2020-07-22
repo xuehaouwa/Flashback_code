@@ -3,11 +3,13 @@ from enum import Enum
 import torch
 from torch.utils.data import Dataset
 
+
 class Split(Enum):
     ''' Defines whether to split for train or test.
     '''
     TRAIN = 0
-    TEST = 1    
+    TEST = 1
+
 
 class Usage(Enum):
     '''
@@ -20,14 +22,13 @@ class Usage(Enum):
     
     The unused sequences are discarded. This setting applies after the train/test split.
     '''
-    
+
     MIN_SEQ_LENGTH = 0
     MAX_SEQ_LENGTH = 1
     CUSTOM = 2
-    
+
 
 class PoiDataset(Dataset):
-    
     '''
     Our Point-of-interest pytorch dataset: To maximize GPU workload we organize the data in batches of
     "user" x "a fixed length sequence of locations". The active users have at least one sequence in the batch.
@@ -45,37 +46,37 @@ class PoiDataset(Dataset):
     We work with a 80/20 train/test spilt, where test check-ins are strictly after training checkins.
     To obtain at least one test sequence with label we require any user to have at least (5*<sequence-length>+1) checkins in total.    
     '''
-    
+
     def reset(self):
         # reset training state:
-        self.next_user_idx = 0 # current user index to add
-        self.active_users = [] # current active users
-        self.active_user_seq = [] # current active users sequences
-        self.user_permutation = [] # shuffle users during training
-        
+        self.next_user_idx = 0  # current user index to add
+        self.active_users = []  # current active users
+        self.active_user_seq = []  # current active users sequences
+        self.user_permutation = []  # shuffle users during training
+
         # set active users:
         for i in range(self.batch_size):
             self.next_user_idx = (self.next_user_idx + 1) % len(self.users)
-            self.active_users.append(i) 
+            self.active_users.append(i)
             self.active_user_seq.append(0)
-        
+
         # use 1:1 permutation:
         for i in range(len(self.users)):
             self.user_permutation.append(i)
 
-        
     def shuffle_users(self):
-        random.shuffle(self.user_permutation)    
+        random.shuffle(self.user_permutation)
         # reset active users:
         self.next_user_idx = 0
         self.active_users = []
         self.active_user_seq = []
-        for i in range(self.batch_size):            
+        for i in range(self.batch_size):
             self.next_user_idx = (self.next_user_idx + 1) % len(self.users)
-            self.active_users.append(self.user_permutation[i]) 
+            self.active_users.append(self.user_permutation[i])
             self.active_user_seq.append(0)
-    
-    def __init__(self, users, times, coords, locs, sequence_length, batch_size, split, usage, loc_count, custom_seq_count):
+
+    def __init__(self, users, times, coords, locs, sequence_length, batch_size, split, usage, loc_count,
+                 custom_seq_count):
         self.users = users
         self.times = times
         self.coords = coords
@@ -93,17 +94,17 @@ class PoiDataset(Dataset):
         self.Ps = []
         self.Qs = torch.zeros(loc_count, 1)
         self.usage = usage
-        self.batch_size = batch_size        
+        self.batch_size = batch_size
         self.loc_count = loc_count
-        self.custom_seq_count = custom_seq_count        
+        self.custom_seq_count = custom_seq_count
 
         self.reset()
 
         # collect locations:
         for i in range(loc_count):
-            self.Qs[i, 0] = i    
-            
-        # align labels to locations (shift by one)
+            self.Qs[i, 0] = i
+
+            # align labels to locations (shift by one)
         for i, loc in enumerate(locs):
             self.locs[i] = loc[:-1]
             self.labels.append(loc[1:])
@@ -112,9 +113,10 @@ class PoiDataset(Dataset):
             self.lbl_coords.append(self.coords[i][1:])
             self.times[i] = self.times[i][:-1]
             self.coords[i] = self.coords[i][:-1]
-        
+
         # split to training / test phase:
-        for i, (time, coord, loc, label, lbl_time, lbl_coord) in enumerate(zip(self.times, self.coords, self.locs, self.labels, self.lbl_times, self.lbl_coords)):
+        for i, (time, coord, loc, label, lbl_time, lbl_coord) in enumerate(
+                zip(self.times, self.coords, self.locs, self.labels, self.lbl_times, self.lbl_coords)):
             train_thr = int(len(loc) * 0.8)
             if (split == Split.TRAIN):
                 self.times[i] = time[:train_thr]
@@ -129,15 +131,16 @@ class PoiDataset(Dataset):
                 self.locs[i] = loc[train_thr:]
                 self.labels[i] = label[train_thr:]
                 self.lbl_times[i] = lbl_time[train_thr:]
-                self.lbl_coords[i] = lbl_coord[train_thr:]            
-            
-        # split location and labels to sequences:
+                self.lbl_coords[i] = lbl_coord[train_thr:]
+
+                # split location and labels to sequences:
         self.max_seq_count = 0
         self.min_seq_count = 10000000
         self.capacity = 0
-        for i, (time, coord, loc, label, lbl_time, lbl_coord) in enumerate(zip(self.times, self.coords, self.locs, self.labels, self.lbl_times, self.lbl_coords)):
+        for i, (time, coord, loc, label, lbl_time, lbl_coord) in enumerate(
+                zip(self.times, self.coords, self.locs, self.labels, self.lbl_times, self.lbl_coords)):
             seq_count = len(loc) // sequence_length
-            assert seq_count > 0 , 'fix seq-length and min-checkins in order to have at least one test sequence in a 80/20 split!'
+            assert seq_count > 0, 'fix seq-length and min-checkins in order to have at least one test sequence in a 80/20 split!'
             seqs = []
             seq_times = []
             seq_coords = []
@@ -146,7 +149,7 @@ class PoiDataset(Dataset):
             seq_lbl_coords = []
             for j in range(seq_count):
                 start = j * sequence_length
-                end = (j+1) * sequence_length
+                end = (j + 1) * sequence_length
                 seqs.append(loc[start:end])
                 seq_times.append(time[start:end])
                 seq_coords.append(coord[start:end])
@@ -155,7 +158,7 @@ class PoiDataset(Dataset):
                 seq_lbl_coords.append(lbl_coord[start:end])
             self.sequences.append(seqs)
             self.sequences_times.append(seq_times)
-            self.sequences_coords.append(seq_coords)            
+            self.sequences_coords.append(seq_coords)
             self.sequences_labels.append(seq_lbls)
             self.sequences_lbl_times.append(seq_lbl_times)
             self.sequences_lbl_coords.append(seq_lbl_coords)
@@ -163,23 +166,23 @@ class PoiDataset(Dataset):
             self.capacity += seq_count
             self.max_seq_count = max(self.max_seq_count, seq_count)
             self.min_seq_count = min(self.min_seq_count, seq_count)
-        
+
         # statistics
         if (self.usage == Usage.MIN_SEQ_LENGTH):
             print(split, 'load', len(users), 'users with min_seq_count', self.min_seq_count, 'batches:', self.__len__())
         if (self.usage == Usage.MAX_SEQ_LENGTH):
             print(split, 'load', len(users), 'users with max_seq_count', self.max_seq_count, 'batches:', self.__len__())
         if (self.usage == Usage.CUSTOM):
-            print(split, 'load', len(users), 'users with custom_seq_count', self.custom_seq_count, 'Batches:', self.__len__())
-            
-    
+            print(split, 'load', len(users), 'users with custom_seq_count', self.custom_seq_count, 'Batches:',
+                  self.__len__())
+
     def sequences_by_user(self, idx):
         return self.sequences[idx]
-    
+
     def __len__(self):
         ''' Amount of available batches to process each sequence at least once.      
         '''
-        
+
         if (self.usage == Usage.MIN_SEQ_LENGTH):
             # min times amount_of_user_batches:
             return self.min_seq_count * (len(self.users) // self.batch_size)
@@ -190,8 +193,8 @@ class PoiDataset(Dataset):
         if (self.usage == Usage.CUSTOM):
             return self.custom_seq_count * (len(self.users) // self.batch_size)
         raise ValueError()
-    
-    def __getitem__(self, idx):        
+
+    def __getitem__(self, idx):
         ''' Against pytorch convention, we directly build a full batch inside __getitem__.
         Use a batch_size of 1 in your pytorch data loader.
         
@@ -204,7 +207,7 @@ class PoiDataset(Dataset):
         reset_h is a flag which indicates when a new user has been replacing a previous user in the
         batch. You should reset this users hidden state to initial value h_0.
         '''
-        
+
         seqs = []
         times = []
         coords = []
@@ -219,7 +222,7 @@ class PoiDataset(Dataset):
             if (self.usage == Usage.MIN_SEQ_LENGTH):
                 max_j = self.min_seq_count
             if (self.usage == Usage.CUSTOM):
-                max_j = min(max_j, self.custom_seq_count) # use either the users maxima count or limit by custom count
+                max_j = min(max_j, self.custom_seq_count)  # use either the users maxima count or limit by custom count
             if (j >= max_j):
                 # repalce this user in current sequence:
                 i_user = self.user_permutation[self.next_user_idx]
@@ -245,6 +248,5 @@ class PoiDataset(Dataset):
         s = torch.stack(coords, dim=1)
         y = torch.stack(lbls, dim=1)
         y_t = torch.stack(lbl_times, dim=1)
-        y_s = torch.stack(lbl_coords, dim=1)           
+        y_s = torch.stack(lbl_coords, dim=1)
         return x, t, s, y, y_t, y_s, reset_h, torch.tensor(self.active_users)
-

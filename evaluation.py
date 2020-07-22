@@ -67,7 +67,7 @@ class Evaluation:
                 active_users = active_users.to(self.setting.device)            
             
                 # evaluate:
-                out, h = self.trainer.evaluate(x, t, s, y_t, y_s, h, active_users)
+                out = self.trainer.evaluate(x, t, s, y_t, y_s, h, active_users)
                 
                 for j in range(self.setting.batch_size):  
                     # o contains a per user list of votes for all locations for each sequence entry
